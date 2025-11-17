@@ -1,0 +1,137 @@
+// *** Project: book-review-api (Complete) *** // Files are listed below with their file paths. Copy each block into the corresponding file.
+
+/* === package.json === */ { "name": "book-review-api", "version": "1.0.0", "main": "index.js", "scripts": { "start": "node index.js", "dev": "nodemon index.js", "methods:callback": "node methods/callback.js", "methods:promise": "node methods/promise.js", "methods:async": "node methods/asyncawait.js", "methods:axios": "node methods/axios.js" }, "dependencies": { "axios": "^1.0.0", "bcryptjs": "^2.4.3", "body-parser": "^1.20.0", "express": "^4.18.2", "jsonwebtoken": "^9.0.0" }, "devDependencies": { "nodemon": "^2.0.20" } }
+
+/* === index.js === */ const express = require('express'); const bodyParser = require('body-parser'); const publicRoutes = require('./routes/public'); const authRoutes = require('./routes/auth');
+
+const app = express(); app.use(bodyParser.json());
+
+app.use('/', publicRoutes); app.use('/auth', authRoutes);
+
+const PORT = process.env.PORT || 5000; app.listen(PORT, ()=> console.log(Server listening on port ${PORT}));
+
+/* === data/books.json === */ { "9781593275846": { "isbn": "9781593275846", "title": "Eloquent JavaScript, 3rd Edition", "author": "Marijn Haverbeke", "reviews": { "alice": "Great book for JS beginners." } }, "9781491943533": { "isbn": "9781491943533", "title": "You Don't Know JS", "author": "Kyle Simpson", "reviews": {} }, "9780131103627": { "isbn": "9780131103627", "title": "The C Programming Language", "author": "Brian W. Kernighan & Dennis M. Ritchie", "reviews": {} } }
+
+/* === middleware/authMiddleware.js === */ const jwt = require('jsonwebtoken'); const SECRET = "change_this_secret_for_production";
+
+function verifyToken(req, res, next) { const authHeader = req.headers['authorization']; if (!authHeader) return res.status(401).json({ message: 'No token provided' }); const parts = authHeader.split(' '); if (parts.length !== 2) return res.status(401).json({ message: 'Malformed token' }); const token = parts[1];
+
+jwt.verify(token, SECRET, (err, decoded) => { if (err) return res.status(403).json({ message: 'Invalid token' }); req.user = decoded; next(); }); }
+
+module.exports = { verifyToken, SECRET };
+
+/* === routes/public.js === */ const express = require('express'); const router = express.Router(); const fs = require('fs'); const path = require('path'); const booksFile = path.join(__dirname,'../data/books.json');
+
+let users = []; // in-memory storage for users: { username, passwordHash }
+
+const bcrypt = require('bcryptjs'); const jwt = require('jsonwebtoken'); const { SECRET } = require('../middleware/authMiddleware');
+
+function readBooks() { const raw = fs.readFileSync(booksFile); return JSON.parse(raw); }
+
+router.get('/books', (req,res) => { const books = readBooks(); res.json(Object.values(books)); });
+
+router.get('/books/isbn/:isbn', (req,res) => { const books = readBooks(); const book = books[req.params.isbn]; if (!book) return res.status(404).json({ message: 'Book not found' }); res.json(book); });
+
+router.get('/books/author/:author', (req,res) => { const books = readBooks(); const author = req.params.author.toLowerCase(); const result = Object.values(books).filter(b => b.author.toLowerCase().includes(author)); res.json(result); });
+
+router.get('/books/title/:title', (req,res) => { const books = readBooks(); const title = req.params.title.toLowerCase(); const result = Object.values(books).filter(b => b.title.toLowerCase().includes(title)); res.json(result); });
+
+router.get('/books/review/:isbn', (req,res) => { const books = readBooks(); const book = books[req.params.isbn]; if (!book) return res.status(404).json({ message: 'Book not found' }); res.json(book.reviews || {}); });
+
+// REGISTER router.post('/register', async (req,res) => { const { username, password } = req.body; if(!username || !password) return res.status(400).json({ message: 'Provide username and password' }); if (users.find(u => u.username === username)) return res.status(409).json({ message: 'User exists' });
+
+const hash = await bcrypt.hash(password, 8); users.push({ username, passwordHash: hash }); res.json({ message: 'User registered' }); });
+
+// LOGIN router.post('/login', async (req,res) => { const { username, password } = req.body; const user = users.find(u => u.username === username); if (!user) return res.status(401).json({ message: 'Invalid credentials' }); const ok = await bcrypt.compare(password, user.passwordHash); if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
+
+const token = jwt.sign({ username }, SECRET, { expiresIn: '1h' }); res.json({ message: 'Login successful', token }); });
+
+module.exports = router;
+
+/* === routes/auth.js === */ const express2 = require('express'); const router2 = express2.Router(); const fs2 = require('fs'); const path2 = require('path'); const { verifyToken } = require('../middleware/authMiddleware'); const booksFile2 = path2.join(__dirname,'../data/books.json');
+
+function readBooks2() { return JSON.parse(fs2.readFileSync(booksFile2)); } function writeBooks2(data) { fs2.writeFileSync(booksFile2, JSON.stringify(data,null,2)); }
+
+// add or modify review (PUT) router2.put('/review/:isbn', verifyToken, (req,res) => { const username = req.user.username; const { review } = req.body; if (!review) return res.status(400).json({ message: 'Provide review text' });
+
+const books = readBooks2(); const book = books[req.params.isbn]; if (!book) return res.status(404).json({ message: 'Book not found' });
+
+if (!book.reviews) book.reviews = {}; book.reviews[username] = review; writeBooks2(books); res.json({ message: 'Review added/updated', reviews: book.reviews }); });
+
+// delete review (DELETE) router2.delete('/review/:isbn', verifyToken, (req,res) => { const username = req.user.username; const books = readBooks2(); const book = books[req.params.isbn]; if (!book) return res.status(404).json({ message: 'Book not found' });
+
+if (book.reviews && book.reviews[username]) { delete book.reviews[username]; writeBooks2(books); return res.json({ message: 'Review deleted' }); } return res.status(404).json({ message: 'No review by this user' }); });
+
+module.exports = router2;
+
+/* === methods/callback.js === */ const http = require('http');
+
+const options = { hostname: 'localhost', port: 5000, path: '/books', method: 'GET' };
+
+const req = http.request(options, res => { let data = ''; res.on('data', chunk => data += chunk); res.on('end', () => { try{ const parsed = JSON.parse(data); console.log('Callback style: got books, count =', parsed.length); }catch(e){ console.error('Callback parse error', e.message); } }); }); req.on('error', console.error); req.end();
+
+/* === methods/promise.js === */ const axios = require('axios');
+
+// Promise style for ISBN search example (Task 11) function getByIsbn(isbn){ return axios.get(http://localhost:5000/books/isbn/${isbn}) }
+
+getByIsbn('9781593275846') .then(resp => console.log('Promise style: found book title =', resp.data.title)) .catch(err => console.error('Promise error', err.message));
+
+/* === methods/asyncawait.js === */ const axios2 = require('axios');
+
+// async/await search by title (Task 13) async function getByTitle(title){ try{ const resp = await axios2.get(http://localhost:5000/books/title/${encodeURIComponent(title)}); console.log('Async/Await: search by title result count =', resp.data.length); console.log(JSON.stringify(resp.data, null, 2)); }catch(e){ console.error('Async/Await error', e.message); } }
+
+getByTitle('Eloquent');
+
+/* === methods/axios.js === */ const axios3 = require('axios');
+
+axios3.get('http://localhost:5000/books') .then(resp => console.log('Axios script: books count =', resp.data.length)) .catch(err => console.error('Axios error', err.message));
+
+/* === README.md === */
+
+Book Review API - Final Project
+
+This project implements a simple Book Review API using Node.js + Express.
+
+How to run
+
+1. npm install
+
+
+2. node index.js (or npm run dev with nodemon)
+
+
+3. Server runs on http://localhost:5000
+
+
+
+Endpoints
+
+Public:
+
+GET /books
+
+GET /books/isbn/:isbn
+
+GET /books/author/:author
+
+GET /books/title/:title
+
+GET /books/review/:isbn
+
+POST /register { username, password }
+
+POST /login { username, password }
+
+
+Protected (require Authorization: Bearer <token>):
+
+PUT /auth/review/:isbn { review }
+
+DELETE /auth/review/:isbn
+
+
+Methods folder
+
+Run npm run methods:callback, npm run methods:promise, npm run methods:async, npm run methods:axios to execute the small client scripts.
+
+/* End of project files */
